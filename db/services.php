@@ -15,13 +15,27 @@ $functions = array(
         'classpath'   => 'local/usercourses/externallib.php',
         'description' => 'Returns a list of users',
         'type'        => 'read',
+    ),
+    'local_usercourses_list_courses' => array(
+        'classname'   => 'local_usercourses_external',
+        'methodname'  => 'list_courses',
+        'classpath'   => 'local/usercourses/externallib.php',
+        'description' => 'Returns a list of courses',
+        'type'        => 'read',
+    ),
+    'local_usercourses_list_users_courses' => array(
+        'classname'   => 'local_usercourses_external',
+        'methodname'  => 'list_users_courses',
+        'classpath'   => 'local/usercourses/externallib.php',
+        'description' => "Returns a list of users' courses",
+        'type'        => 'read',
     )
 );
 
 // We define the services to install as pre-build services. A pre-build service is not editable by administrator.
 $services = array(
     'User Courses Service' => array(
-        'functions' => array ('local_usercourses_list_users'),
+        'functions' => array('local_usercourses_list_users', 'local_usercourses_list_courses', 'local_usercourses_list_users_courses'),
         'restrictedusers' => 0,
         'enabled' => 1,
         'shortname' => 'user-courses-service'

@@ -1,6 +1,6 @@
 <?php
 
-$plugin->version  = 2021031700;   
+$plugin->version  = 2021031800;   
 $plugin->requires = 2020110900;
 $plugin->component = 'local_usercourses';
 $plugin->cron     = 0;

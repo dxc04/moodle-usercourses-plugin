@@ -47,17 +47,16 @@ class local_usercourses_external extends external_api {
     public static function list_users($limit = 50) {
         global $DB;
 
-        list($limit) = self::validate_parameters(
+        $params = self::validate_parameters(
             self::list_users_parameters(),
             array('limit' => $limit)
         );
 
         self::permCheck();
         $fields_sql =  <<<SQL
-            id, username, fullname, firstname, lastname, email,
-            address, phone1, phone2
+            id, username, firstname, lastname, email
 SQL;
-        return $DB->get_records('user', null, 'DESC', $fields_sql, 0, $limit);
+        return $DB->get_records('user', null, null, $fields_sql, 0, $params['limit']);
     }
 
     /**
@@ -69,14 +68,10 @@ SQL;
             new external_single_structure(
                 array(
                     'id' => new external_value(PARAM_INT, 'The user record id'),
-                    'username'   => new external_value(PARAM_NOTAGS, 'The user name of the user'),
-                    'fullname'   => new external_value(PARAM_NOTAGS, 'The full name of the user'),
-                    'firstname'   => new external_value(PARAM_NOTAGS, 'The first name(s) of the user'),
-                    'lastname'    => new external_value(PARAM_NOTAGS, 'The family name of the user'),
-                    'email' => new external_value(PARAM_EMAIL, 'A valid and unique email address'),
-                    'address' => new external_value(PARAM_TEXT, 'The user home address'),
-                    'phone1' => new external_value(PARAM_ALPHANUMEXT, 'The user primary phone'),
-                    'phone2' => new external_value(PARAM_ALPHANUMEXT, 'The user secondary phone'),
+                    'username' => new external_value(PARAM_NOTAGS, 'The user name of the user'),
+                    'firstname' => new external_value(PARAM_NOTAGS, 'The first name(s) of the user'),
+                    'lastname' => new external_value(PARAM_NOTAGS, 'The family name of the user'),
+                    'email' => new external_value(PARAM_TEXT, 'A unique email address'),
                 )
             )
         );
@@ -105,13 +100,16 @@ SQL;
     public static function list_courses($limit = 50) {
         global $DB;
 
-        list($limit) = self::validate_parameters(
+        $params = self::validate_parameters(
             self::list_users_parameters(),
             array('limit' => $limit)
         );
 
+        $fields_sql =  <<<SQL
+            id, fullname, shortname, idnumber, category
+SQL;
         self::permCheck();
-        return $DB->get_records('course', null, 'DESC', '*', 0, $limit);
+        return $DB->get_records('course', null, null, $fields_sql, 0, $params['limit']);
     }
 
     /**
@@ -122,9 +120,11 @@ SQL;
         return new external_multiple_structure(
             new external_single_structure(
                 array(
-                    'id' => new external_value(PARAM_INT, 'The course record id'),
-                    'fullname' => new external_value(ARAM_ALPHANUMEXT, 'The full name of the course'),
-                    'shortname' => new external_value(ARAM_ALPHANUMEXT, 'The short name of the course'),
+                    'id' => new external_value(PARAM_INT, 'course id'),
+                    'fullname' => new external_value(PARAM_RAW, 'full name'),
+                    'shortname' => new external_value(PARAM_RAW, 'course short name'),
+                    'category' => new external_value(PARAM_INT, 'category id'),
+                    'idnumber' => new external_value(PARAM_RAW, 'id number', VALUE_OPTIONAL),
                 )
             )
         );
@@ -149,23 +149,47 @@ SQL;
      */
     public static function list_users_courses($limit = 50) {
         global $CFG, $DB;
+        require_once("$CFG->dirroot/grade/querylib.php");
         require_once("$CFG->dirroot/user/lib.php");
 
-        list($limit) = self::validate_parameters(
+        $params = self::validate_parameters(
             self::list_users_parameters(),
             array('limit' => $limit)
         );
 
         self::permCheck();
         $data = [];
-        $users = $DB->get_records('user', null, 'DESC', '*', 0, $limit);
-        $fields =  array(
-            'id', 'username', 'fullname', 'firstname', 'lastname', 'email',
-            'address', 'phone1', 'phone2', 'enrolledcourses'
-        );
+        $user_fields = ['id', 'username', 'firstname', 'lastname', 'email'];
+        $users = $DB->get_records('user', null, null, '*', 0, $params['limit']);
         foreach ($users as $user) {
-            $data = user_get_user_details($user, null, $fields);
-            // Todo: find user grades
+            $user_data = [];
+            // Set user info
+            foreach ($user_fields as $field) {
+                $user_data[$field] = $user->$field;
+            }
+
+
+            $enrolledcourses = $grades = [];
+            $courses = enrol_get_users_courses($user->id, true);
+            foreach ($courses as $course) {
+                if ($course->category) {
+                    // Set enrolled courses
+                    $coursecontext = context_course::instance($course->id);
+                    $enrolledcourse = [];
+                    $enrolledcourse['id'] = $course->id;
+                    $enrolledcourse['fullname'] = format_string($course->fullname, true, array('context' => $coursecontext));
+                    $enrolledcourse['shortname'] = format_string($course->shortname, true, array('context' => $coursecontext));
+
+                    $enrolledcourses[] = $enrolledcourse;
+
+                    // Set user course grades
+                    $grade = grade_get_course_grade($user->id, $course->id);
+                    $grades[] = ['courseid' => $course->id, 'shortname' => $course->shortname, 'grade' => $grade->grade];
+                }
+            }
+            $user_data['enrolledcourses'] = $enrolledcourses;
+            $user_data['grades'] = $grades;
+            $data[] = $user_data;
         }
 
         return $data;
@@ -181,21 +205,26 @@ SQL;
                 array(
                     'id' => new external_value(PARAM_INT, 'The user record id'),
                     'username'   => new external_value(PARAM_NOTAGS, 'The user name of the user'),
-                    'fullname'   => new external_value(PARAM_NOTAGS, 'The full name of the user'),
                     'firstname'   => new external_value(PARAM_NOTAGS, 'The first name(s) of the user'),
                     'lastname'    => new external_value(PARAM_NOTAGS, 'The family name of the user'),
-                    'email' => new external_value(PARAM_EMAIL, 'A valid and unique email address'),
-                    'address' => new external_value(PARAM_TEXT, 'The user home address'),
-                    'phone1' => new external_value(PARAM_ALPHANUMEXT, 'The user primary phone'),
-                    'phone2' => new external_value(PARAM_ALPHANUMEXT, 'The user secondary phone'),
+                    'email' => new external_value(PARAM_TEXT, 'A unique email address'),
                     'enrolledcourses' => new external_multiple_structure(
                         new external_single_structure(
                             array(
                                 'id' => new external_value(PARAM_INT, 'The course record id'),
-                                'fullname' => new external_value(ARAM_ALPHANUMEXT, 'The full name of the course'),
-                                'shortname' => new external_value(ARAM_ALPHANUMEXT, 'The short name of the course'),
+                                'fullname' => new external_value(PARAM_ALPHANUMEXT, 'The full name of the course'),
+                                'shortname' => new external_value(PARAM_ALPHANUMEXT, 'The short name of the course'),
                             )
-                        ), 'User enrolled courses', VALUE_OPTIONAL
+                        ), 'User enrolled courses'
+                    ),
+                    'grades' => new external_multiple_structure(
+                        new external_single_structure(
+                            array(
+                                'courseid' => new external_value(PARAM_INT, 'The course record id'),
+                                'shortname' => new external_value(PARAM_ALPHANUMEXT, 'The short name of the course'),
+                                'grade' => new external_value(PARAM_INT, 'The user course grade'),
+                            )
+                        ), 'User course grades'
                     )
                 )
             )
